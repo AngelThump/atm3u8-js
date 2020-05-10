@@ -24,10 +24,10 @@ app.get('/ping', (req, res) => {
 });
 
 const getFile = async (url) => {
-  const file;
+  let file;
   await axios({
     method: "GET",
-    url: `http://127.0.0.1:8081/${url}`
+    url: `http://127.0.0.1:8081${url}`
   })
   .then(response => {
     if(!response.data) {
@@ -43,6 +43,7 @@ const getFile = async (url) => {
     }
     return;
   })
+  return file;
 }
 
 app.get('/hls/:username/:file', async (req, res) => {
@@ -54,7 +55,7 @@ app.get('/hls/:username/:file', async (req, res) => {
     res.status(401).send('only m3u8s');
   }
 
-  redisClient.get(key, function(err, data) {
+  redisClient.get(key, async (err, data) => {
     if(err) {
       res.status(404).send('redis error getting file');
       return console.error(err);
@@ -68,14 +69,14 @@ app.get('/hls/:username/:file', async (req, res) => {
     res.setHeader('Content-Type', 'application/x-mpegURL');
     res.setHeader('Cache-Control', 'no-cache, no-store, private');
     if(!data) {
-      const file = await getFile(url);
+      let file = await getFile(url);
       if(!file) {
         return res.status(404).send('no file');
       }
       file = await loadPlaylist(file, stream);
       res.send(file);
       
-      redisClient.set(key, file, 'PX', 500);
+      return redisClient.set(key, file, 'PX', 200);
     }
     res.setHeader('X-Cached-Playlist', 'YES');
     res.send(data);
@@ -88,7 +89,7 @@ app.get('/hls/:username', async (req, res) => {
   const key = stream;
   stream = stream.substring(0,stream.indexOf('.m3u8'));
 
-  redisClient.get(key, function(err, data) {
+  redisClient.get(key, async (err, data) => {
     if(err) {
       res.status(404).send('redis error getting file');
       return console.error(err);
@@ -102,14 +103,14 @@ app.get('/hls/:username', async (req, res) => {
     res.setHeader('Content-Type', 'application/x-mpegURL');
     res.setHeader('Cache-Control', 'no-cache, no-store, private');
     if(!data) {
-      const file = await getFile(url);
+      let file = await getFile(url);
       if(!file) {
         return res.status(404).send('no file');
       }
       file = await loadPlaylist(file, stream);
       res.send(file);
       
-      redisClient.set(key, file, 'PX', 10000);
+      return redisClient.set(key, file, 'PX', 10000);
     }
     res.setHeader('X-Cached-Playlist', 'YES');
     res.send(data);
