@@ -14,7 +14,6 @@ Getting up and running is as easy as 1, 2, 3.
     ```
     cd path/to/atm3u8-js; npm install
     ```
-3. Add your configuration with api keys.
 
 3. Start your app
 
