@@ -38,7 +38,7 @@ const getFile = async (url) => {
     file = response.data;
   })
   .catch(e => {
-    if(e.response.statusCode != 404) {
+    if(e.response.status != 404) {
       console.error(e.response);
     }
     return;
@@ -125,13 +125,10 @@ const loadPlaylist = async (m3u8, stream) => {
   if (playlist.isMasterPlaylist) {
     for(let i = 0; i<playlist.variants.length; i++) {
       const region = server.substring(0,3);
-      //overpowered_src/index.m3u8
-      /*
-      if(playlist.variants[i].uri.includes('_src')) {
-        playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls/${stream}/index.m3u8`;
-      } else {
-        playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls/` + playlist.variants[i].uri;
-      }*/
+      if(!playlist.variants[i].codecs) {
+        //ffmpeg not producing codec for source. no idea why. bandage for now.
+        playlist.variants[i].codecs = 'avc1.42c01f,mp4a.40.2';
+      }
       playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls` + playlist.variants[i].uri;
     }
   } else {
