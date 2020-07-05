@@ -11,8 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^0.19.2",
     "express": "^4.17.1",
+    "got": "^11.4.0",
     "hls-parser": "^0.6.1",
     "redis": "^3.0.2"
   }

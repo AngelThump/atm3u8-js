@@ -1,5 +1,9 @@
+process.on('unhandledRejection', function(reason, p){
+  console.log("Possibly Unhandled Rejection at: Promise ", p, " reason: ", reason);
+});
+
 const HLS = require('hls-parser');
-const axios = require('axios');
+const got = require('got');
 const os = require("os");
 const server = os.hostname();
 const port = 8089;
@@ -9,7 +13,6 @@ const redisClient = redis.createClient();
 const express = require('express');
 const app = express();
 app.disable('x-powered-by');
-
 
 redisClient.on('connect', function() {
   console.log('Redis client connected');
@@ -25,20 +28,24 @@ app.get('/ping', (req, res) => {
 
 const getFile = async (url) => {
   let file;
-  await axios({
-    method: "GET",
-    url: `http://127.0.0.1:8081${url}`
-  })
+  await got(`http://127.0.0.1:8081${url}`)
   .then(response => {
-    if(!response.data) {
-      console.error(response.data);
+    if(!response) {
+      console.error(response);
+      return;
+    }
+    if(!response.body) {
+      console.error(response);
       return;
     }
 
-    file = response.data;
+    file = response.body;
   })
   .catch(e => {
-    if(e.response.status != 404) {
+    if(!e.response) {
+      return console.error(e);
+    }
+    if(e.response.statusCode != 404) {
       console.error(e.response);
     }
     return;
@@ -52,7 +59,7 @@ app.get('/hls/:username/:file', async (req, res) => {
   const key = url.substring(url.indexOf('/hls/') + 5, url.length);
 
   if(!key.endsWith('.m3u8')) {
-    res.status(401).send('only m3u8s');
+    return res.status(401).send('only m3u8s');
   }
 
   redisClient.get(key, async (err, data) => {
@@ -74,9 +81,12 @@ app.get('/hls/:username/:file', async (req, res) => {
         return res.status(404).send('no file');
       }
       file = await loadPlaylist(file, stream);
+      if(!file) {
+        return res.status(500).send('hls parsing error');
+      }
       res.send(file);
       
-      return redisClient.set(key, file, 'PX', 200);
+      return redisClient.set(key, file, 'PX', 500);
     }
     res.setHeader('X-Cached-Playlist', 'YES');
     res.send(data);
@@ -88,6 +98,10 @@ app.get('/hls/:username', async (req, res) => {
   let stream = req.params.username;
   const key = stream;
   stream = stream.substring(0,stream.indexOf('.m3u8'));
+  
+  if(!key.endsWith('.m3u8')) {
+    return res.status(401).send('only m3u8s');
+  }
 
   redisClient.get(key, async (err, data) => {
     if(err) {
@@ -108,9 +122,12 @@ app.get('/hls/:username', async (req, res) => {
         return res.status(404).send('no file');
       }
       file = await loadPlaylist(file, stream);
+      if(!file) {
+        return res.status(500).send('hls parsing error');
+      }
       res.send(file);
       
-      return redisClient.set(key, file, 'PX', 10000);
+      return redisClient.set(key, file, 'PX', 60000);
     }
     res.setHeader('X-Cached-Playlist', 'YES');
     res.send(data);
