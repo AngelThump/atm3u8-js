@@ -28,7 +28,7 @@ app.get('/ping', (req, res) => {
 
 const getFile = async (url) => {
   let file;
-  await got(`http://127.0.0.1:8081${url}`)
+  await got(`http://127.0.0.1:80${url}`)
   .then(response => {
     if(!response) {
       console.error(response);
@@ -146,7 +146,7 @@ const loadPlaylist = async (m3u8, stream) => {
         //ffmpeg not producing codec for source. no idea why. bandage for now.
         playlist.variants[i].codecs = 'avc1.42c01f,mp4a.40.2';
       }
-      playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls` + playlist.variants[i].uri;
+      playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls/` + playlist.variants[i].uri;
     }
   } else {
     for(let i = 0; i<playlist.segments.length; i++) {
