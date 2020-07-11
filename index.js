@@ -3,13 +3,13 @@ process.on('unhandledRejection', function(reason, p){
 });
 
 const HLS = require('hls-parser');
-const got = require('got');
 const os = require("os");
 const server = os.hostname();
 const port = 8089;
 const cors = ['https://angelthump.com', 'https://www.angelthump.com', 'https://player.angelthump.com', 'https://www.gstatic.com', 'https://gstatic.com'];
 const redis = require('redis');
-const redisClient = redis.createClient();
+const rstream = require('redis-rstream');
+const redisClient = redis.createClient({return_buffers : true});
 const express = require('express');
 const app = express();
 app.disable('x-powered-by');
@@ -26,113 +26,104 @@ app.get('/ping', (req, res) => {
   res.status(200).send('GOOD TO GO');
 });
 
-const getFile = async (url) => {
-  let file;
-  await got(`http://127.0.0.1:80${url}`)
-  .then(response => {
-    if(!response) {
-      console.error(response);
-      return;
-    }
-    if(!response.body) {
-      console.error(response);
-      return;
-    }
+const getCachedFile = () => {
+  return async(req, res, next) => {
+      let url = req.originalUrl;
+      const key = url.substring(url.indexOf('/hls/') + 5, url.length);
+      //console.log(key);
 
-    file = response.body;
-  })
-  .catch(e => {
-    if(!e.response) {
-      return console.error(e);
-    }
-    if(e.response.statusCode != 404) {
-      console.error(e.response);
-    }
-    return;
-  })
-  return file;
+      res.header('Cache-Control', 'no-cache, no-store, private');
+      res.header("Access-Control-Allow-Origin", "*");
+      
+      if(key.endsWith('m3u8')) {
+        res.header('Content-Type', 'application/vnd.apple.mpegurl');
+        redisClient.get(key, async function(err, data) {
+          if(err) {
+            res.status(404).send('no file');
+            return console.error(err);
+          }
+          if(!data) {
+            return res.status(404).send('no file');
+          }
+
+          const stream = key.substring(0, key.lastIndexOf('/'));
+          const playlist = await loadPlaylist(data.toString(), stream);
+          if(!playlist) {
+            res.status(400).send('no m3u8');
+          }
+          res.send(playlist);
+        })
+      } else if (key.endsWith('mp4')) {
+        res.header('Content-Type', 'video/mp4');
+        redisClient.get(key, function(err, data) {
+          if(err) {
+            res.status(404).send('no file');
+            return console.error(err);
+          }
+          if(!data) {
+            return res.status(404).send('no file');
+          }
+          res.send(data);
+        })
+      } else if (key.endsWith('m4s')) {
+        res.header('Content-Type', 'video/iso.segment');
+        redisClient.exists(key, (err, data) => {
+          if(err) console.error(err)
+          if(!data) {
+            return res.status(404).send('no file');
+          }
+          rstream(redisClient, key).pipe(res);
+        })
+      } else if (key.endsWith('ts')) {
+        res.header('Content-Type', 'video/mp2t');
+        redisClient.exists(key, (err, data) => {
+          if(err) console.error(err)
+          if(!data) {
+            return res.status(404).send('no file');
+          }
+          rstream(redisClient, key).pipe(res);
+        })
+      } else {
+        res.send('?');
+      }
+  }
 }
 
-app.get('/hls/:username/:file', async (req, res) => {
-  let url = req.url;
-  let stream = req.params.username;
-  const key = url.substring(url.indexOf('/hls/') + 5, url.length);
+const getCachedMaster = () => {
+  return async(req, res, next) => {
+      let url = req.originalUrl;
+      const key = url.substring(url.indexOf('/hls/') + 5, url.length);
+      //console.log(key);
 
-  if(!key.endsWith('.m3u8')) {
-    return res.status(401).send('only m3u8s');
-  }
-
-  redisClient.get(key, async (err, data) => {
-    if(err) {
-      res.status(404).send('redis error getting file');
-      return console.error(err);
-    }
-    /*
-    const origin = req.headers.origin;
-    if(cors.indexOf(origin) > -1){
-      //res.setHeader('Access-Control-Allow-Origin', origin);
-    }*/
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/x-mpegURL');
-    res.setHeader('Cache-Control', 'no-cache, no-store, private');
-    if(!data) {
-      let file = await getFile(url);
-      if(!file) {
-        return res.status(404).send('no file');
-      }
-      file = await loadPlaylist(file, stream);
-      if(!file) {
-        return res.status(500).send('hls parsing error');
-      }
-      res.send(file);
+      res.header('Cache-Control', 'no-cache, no-store, private');
+      res.header("Access-Control-Allow-Origin", "*");
       
-      return redisClient.set(key, file, 'PX', 500);
-    }
-    res.setHeader('X-Cached-Playlist', 'YES');
-    res.send(data);
-  })
-})
+      if(key.endsWith('m3u8')) {
+        res.header('Content-Type', 'application/vnd.apple.mpegurl');
+        redisClient.get(key, async function(err, data) {
+          if(err) {
+            res.status(404).send('no file');
+            return console.error(err);
+          }
+          if(!data) {
+            return res.status(404).send('no file');
+          }
 
-app.get('/hls/:username', async (req, res) => {
-  const url = req.url;
-  let stream = req.params.username;
-  const key = stream;
-  stream = stream.substring(0,stream.indexOf('.m3u8'));
-  
-  if(!key.endsWith('.m3u8')) {
-    return res.status(401).send('only m3u8s');
+          const stream = key.substring(0, key.lastIndexOf('.m3u8'));
+          const playlist = await loadPlaylist(data.toString(), stream);
+          if(!playlist) {
+            res.status(400).send('no m3u8');
+          }
+          res.send(playlist);
+        })
+      } else {
+        res.send('?');
+      }
   }
+}
 
-  redisClient.get(key, async (err, data) => {
-    if(err) {
-      res.status(404).send('redis error getting file');
-      return console.error(err);
-    }
-    /*
-    const origin = req.headers.origin;
-    if(cors.indexOf(origin) > -1){
-      //res.setHeader('Access-Control-Allow-Origin', origin);
-    }*/
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/x-mpegURL');
-    res.setHeader('Cache-Control', 'no-cache, no-store, private');
-    if(!data) {
-      let file = await getFile(url);
-      if(!file) {
-        return res.status(404).send('no file');
-      }
-      file = await loadPlaylist(file, stream);
-      if(!file) {
-        return res.status(500).send('hls parsing error');
-      }
-      res.send(file);
-      
-      return redisClient.set(key, file, 'PX', 60000);
-    }
-    res.setHeader('X-Cached-Playlist', 'YES');
-    res.send(data);
-  })
-});
+app.get('/hls/:username', getCachedMaster(app));
+app.get('/hls/:username/:endUrl', getCachedFile(app));
 
 app.listen(port, () => console.log(`atm3u8-js listening on port ${port}!`))
 
