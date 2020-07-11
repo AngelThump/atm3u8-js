@@ -49,7 +49,7 @@ const getCachedFile = () => {
           const stream = key.substring(0, key.lastIndexOf('/'));
           const playlist = await loadPlaylist(data.toString(), stream);
           if(!playlist) {
-            res.status(400).send('no m3u8');
+            res.status(404).send('no m3u8');
           }
           res.send(playlist);
         })
@@ -112,7 +112,7 @@ const getCachedMaster = () => {
           const stream = key.substring(0, key.lastIndexOf('.m3u8'));
           const playlist = await loadPlaylist(data.toString(), stream);
           if(!playlist) {
-            res.status(400).send('no m3u8');
+            res.status(404).send('no m3u8');
           }
           res.send(playlist);
         })
