@@ -86,7 +86,7 @@ app.get('/hls/:username/:file', async (req, res) => {
       }
       res.send(file);
       
-      return redisClient.set(key, file, 'PX', 500);
+      return redisClient.set(key, file, 'PX', 100);
     }
     res.setHeader('X-Redis-Cached-Playlist', 'YES');
     res.send(data);
