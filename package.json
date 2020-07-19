@@ -12,8 +12,8 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.17.1",
+    "got": "^11.5.1",
     "hls-parser": "^0.6.1",
-    "redis": "^3.0.2",
-    "redis-rstream": "^1.0.1"
+    "redis": "^3.0.2"
   }
 }
