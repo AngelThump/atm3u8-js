@@ -7,7 +7,7 @@ const got = require('got');
 const os = require("os");
 const server = os.hostname();
 const port = 8089;
-const cors = ['https://angelthump.com', 'https://www.angelthump.com', 'https://player.angelthump.com', 'https://www.gstatic.com', 'https://gstatic.com', 'https://hls-js-dev.netlify.app'];
+const cors = ['https://angelthump.com', 'https://www.angelthump.com', 'https://player.angelthump.com', 'https://www.gstatic.com', 'https://gstatic.com', 'https://hls-js-dev.netlify.app', 'https://strims.gg'];
 const express = require('express');
 const app = express();
 app.disable('x-powered-by');
