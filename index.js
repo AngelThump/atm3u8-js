@@ -56,11 +56,12 @@ app.get('/hls/:username/:file', async (req, res) => {
   if(!file) {
     return res.status(500).send('hls parsing error');
   }
+  /*
   const origin = req.headers.origin;
   if(cors.indexOf(origin) > -1){
     res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  //res.setHeader('Access-Control-Allow-Origin', '*');
+  }*/
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/x-mpegURL');
   res.setHeader('Cache-Control', 'no-cache, no-store, private');
   res.send(file);
@@ -78,11 +79,12 @@ app.get('/hls/:username', async (req, res) => {
   if(!file) {
     return res.status(500).send('hls parsing error');
   }
+  /*
   const origin = req.headers.origin;
   if(cors.indexOf(origin) > -1){
     res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  //res.setHeader('Access-Control-Allow-Origin', '*');
+  }*/
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/x-mpegURL');
   res.setHeader('Cache-Control', 'no-cache, no-store, private');
   res.send(file);
