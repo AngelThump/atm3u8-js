@@ -5,13 +5,11 @@ const region = server.substring(0, 3);
 const config = require('./config.json');
 const redis = require('redis');
 const m3u8RedisClient = redis.createClient({host: config.redis[region], detect_buffers: true, password: config.redis.password});
-const vigorRedisClient = redis.createClient({host: config.redis.vigor, detect_buffers: true, password: config.redis.password});
 const port = config.port;
 const Readable = require('stream').Readable
 const express = require('express');
 const app = express();
 const zlib = require('zlib');
-const { promisify } = require("util");
 app.set('etag', false);
 app.disable('x-powered-by');
 app.listen(port, () => console.log(`${region} atm3u8-js listening on port ${port}!`));
@@ -22,14 +20,6 @@ m3u8RedisClient.on('connect', function() {
 
 m3u8RedisClient.on('error', (err) => {
   console.log("M3u8 Redis Error " + err);
-});
-
-vigorRedisClient.on('connect', function() {
-  console.log('Vigor Redis client connected');
-});
-
-vigorRedisClient.on('error', (err) => {
-  console.log("Vigor Redis Error " + err);
 });
 
 app.get('/ping', (req, res) => {
@@ -89,50 +79,18 @@ app.get('/hls/:stream\.m3u8', (req, res) => {
 });
 
 const loadPlaylist = async (m3u8, stream) => {
-  const getAsync = promisify(vigorRedisClient.get).bind(vigorRedisClient);
   let playlist = HLS.parse(m3u8);
-  
-  let edges;
-
-  await getAsync('edges-bandwidth')
-  .then(data => {
-    if(!data) return console.error('no edge bandwidth data');
-    edges = JSON.parse(data)[region];
-  })
-  .catch(e => {
-    console.error(e);
-  })
-
-  if(!edges) return;
-
-  let bandwidth = [];
-  for(let i=0; i < edges.length; i++) {
-    const edge = edges[i];
-    if(!edge.bandwidth) {
-      edges.splice(i, 1);
-      continue;
-    }
-    bandwidth.push(edge.bandwidth);
-  }
-
-  const serverIndex = bandwidth.indexOf(Math.min.apply(null,bandwidth));
-  if(serverIndex === -1) {
-    console.error('no servers found');
-    return;
-  }
-  const server = edges[serverIndex];
-
   if (playlist.isMasterPlaylist) {
     for(let i = 0; i<playlist.variants.length; i++) {
       if(!playlist.variants[i].codecs) {
         //ffmpeg not producing codec for source. no idea why. bandage for now.
         playlist.variants[i].codecs = 'avc1.42c01f,mp4a.40.2';
       }
-      playlist.variants[i].uri = `https://${server.name}.angelthump.com/hls/` + playlist.variants[i].uri;
+      playlist.variants[i].uri = `https://${region}-haproxy.angelthump.com/hls/` + playlist.variants[i].uri;
     }
   } else {
     for(let i = 0; i<playlist.segments.length; i++) {
-      playlist.segments[i].uri = `https://${server.name}.angelthump.com/hls/${stream}/` + playlist.segments[i].uri;
+      playlist.segments[i].uri = `https://${server}.angelthump.com/hls/${stream}/` + playlist.segments[i].uri;
     }
   }
   return HLS.stringify(playlist);
