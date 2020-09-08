@@ -1,112 +1,138 @@
-process.on('unhandledRejection', function(reason, p){
-  console.log("Possibly Unhandled Rejection at: Promise ", p, " reason: ", reason);
-});
-
 const HLS = require('hls-parser');
-const got = require('got');
 const os = require("os");
 const server = os.hostname();
-const port = 8089;
-const cors = ['https://angelthump.com', 'https://www.angelthump.com', 'https://player.angelthump.com', 'https://www.gstatic.com', 'https://gstatic.com', 'https://hls-js-dev.netlify.app', 'https://strims.gg', 'http://player.angelthump.com:3000'];
+const region = server.substring(0, 3);
+const config = require('./config.json');
+const redis = require('redis');
+const m3u8RedisClient = redis.createClient({host: config.redis[region], detect_buffers: true, password: config.redis.password});
+const vigorRedisClient = redis.createClient({host: config.redis.vigor, detect_buffers: true, password: config.redis.password});
+const port = config.port;
+const Readable = require('stream').Readable
 const express = require('express');
 const app = express();
+const zlib = require('zlib');
+const { promisify } = require("util");
+app.set('etag', false);
 app.disable('x-powered-by');
+app.listen(port, () => console.log(`${region} atm3u8-js listening on port ${port}!`));
 
+m3u8RedisClient.on('connect', function() {
+  console.log('M3u8 Redis client connected');
+});
+
+m3u8RedisClient.on('error', (err) => {
+  console.log("M3u8 Redis Error " + err);
+});
+
+vigorRedisClient.on('connect', function() {
+  console.log('Vigor Redis client connected');
+});
+
+vigorRedisClient.on('error', (err) => {
+  console.log("Vigor Redis Error " + err);
+});
 
 app.get('/ping', (req, res) => {
   res.status(200).send('GOOD TO GO');
 });
 
-const getFile = async (url) => {
-  let file;
-  await got(`http://127.0.0.1:80${url}`)
-  .then(response => {
-    if(!response) {
-      console.error(response);
-      return;
-    }
-    if(!response.body) {
-      console.error(response);
-      return;
-    }
+app.get('/hls/:stream/:file', async (req, res) => {
+  const stream = req.params.stream;
+  const key = stream + '/' + req.params.file;
 
-    file = response.body;
-  })
-  .catch(e => {
-    if(!e.response) {
-      return console.error(e);
-    }
-    if(e.response.statusCode != 404) {
-      console.error(e.response);
-    }
-    return;
-  })
-  return file;
-}
-
-app.get('/hls/:username/:file', async (req, res) => {
-  let url = req.url;
-  let stream = req.params.username;
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache, no-store, private');
+  
+  m3u8RedisClient.get(key, async (error, data) => {
+    if(error) {
+      res.status(500).send('redis error');
+      return console.error(error);
+    }
+    if(!data) return res.status(400).send('no m3u8');
 
-  let file = await getFile(url);
-  if(!file) {
-    return res.status(404).send('no file');
-  }
-  file = await loadPlaylist(file, stream);
-  if(!file) {
-    return res.status(500).send('hls parsing error');
-  }
-  /*
-  const origin = req.headers.origin;
-  if(cors.indexOf(origin) > -1){
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }*/
-  res.setHeader('Content-Type', 'application/x-mpegURL');
-  res.send(file);
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+
+    const m3u8 = await loadPlaylist(data, stream);
+    const gzip = zlib.createGzip();
+
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+
+    Readable.from(m3u8).pipe(gzip).pipe(res);
+  });
 })
 
-app.get('/hls/:username', async (req, res) => {
-  const url = req.url;
-  let stream = req.params.username;
+app.get('/hls/:stream\.m3u8', (req, res) => {
+  const stream = req.params.stream;
+  const key = `${stream}.m3u8`;
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache, no-store, private');
+  
+  m3u8RedisClient.get(key, async (error, data) => {
+    if(error) {
+      res.status(500).send('redis error');
+      return console.error(error);
+    }
+    if(!data) return res.status(400).send('no m3u8');
 
-  let file = await getFile(url);
-  if(!file) {
-    return res.status(404).send('no file');
-  }
-  file = await loadPlaylist(file, stream);
-  if(!file) {
-    return res.status(500).send('hls parsing error');
-  }
-  /*
-  const origin = req.headers.origin;
-  if(cors.indexOf(origin) > -1){
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }*/
-  res.setHeader('Content-Type', 'application/x-mpegURL');
-  res.send(file);
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+
+    const m3u8 = await loadPlaylist(data, stream);
+    const gzip = zlib.createGzip();
+
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+
+    Readable.from(m3u8).pipe(gzip).pipe(res);
+  });
 });
 
-app.listen(port, () => console.log(`atm3u8-js listening on port ${port}!`))
-
 const loadPlaylist = async (m3u8, stream) => {
+  const getAsync = promisify(vigorRedisClient.get).bind(vigorRedisClient);
   let playlist = HLS.parse(m3u8);
-  if(!playlist) return null;
+  
+  let edges;
+
+  await getAsync('edges-bandwidth')
+  .then(data => {
+    if(!data) return console.error('no edge bandwidth data');
+    edges = JSON.parse(data)[region];
+  })
+  .catch(e => {
+    console.error(e);
+  })
+
+  if(!edges) return;
+
+  let bandwidth = [];
+  for(let i=0; i < edges.length; i++) {
+    const edge = edges[i];
+    if(!edge.bandwidth) {
+      edges.splice(i, 1);
+      continue;
+    }
+    bandwidth.push(edge.bandwidth);
+  }
+
+  const serverIndex = bandwidth.indexOf(Math.min.apply(null,bandwidth));
+  if(serverIndex === -1) {
+    console.error('no servers found');
+    return;
+  }
+  const server = edges[serverIndex];
+
   if (playlist.isMasterPlaylist) {
     for(let i = 0; i<playlist.variants.length; i++) {
-      const region = server.substring(0,3);
       if(!playlist.variants[i].codecs) {
         //ffmpeg not producing codec for source. no idea why. bandage for now.
         playlist.variants[i].codecs = 'avc1.42c01f,mp4a.40.2';
       }
-      playlist.variants[i].uri = `https://${server}.angelthump.com/hls/` + playlist.variants[i].uri;
+      playlist.variants[i].uri = `https://${server.name}.angelthump.com/hls/` + playlist.variants[i].uri;
     }
   } else {
     for(let i = 0; i<playlist.segments.length; i++) {
-      playlist.segments[i].uri = `https://${server}.angelthump.com/hls/${stream}/` + playlist.segments[i].uri;
+      playlist.segments[i].uri = `https://${server.name}.angelthump.com/hls/${stream}/` + playlist.segments[i].uri;
     }
   }
   return HLS.stringify(playlist);
