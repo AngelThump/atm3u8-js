@@ -1,7 +1,7 @@
 const HLS = require('hls-parser');
 const os = require("os");
 const server = os.hostname();
-const region = server.substring(0, 3);
+const region = server.substring(0,3);
 const config = require('./config.json');
 const redis = require('redis');
 const m3u8RedisClient = redis.createClient({host: config.redis[region], detect_buffers: true, password: config.redis.password});
